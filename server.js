@@ -1097,9 +1097,14 @@ app.get('/api/odoo-outs', async (req, res) => {
 
     const scannedTrackings = new Set();
     const scannedPickingIds = new Set();
+    const scannedTrackingsClean = [];  // Para matching por substring
     for (const pallet of Object.values(database.pallets)) {
       for (const pkg of (pallet.packages || [])) {
-        if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+        if (pkg.tracking) {
+          const t = pkg.tracking.toUpperCase().trim();
+          scannedTrackings.add(t);
+          scannedTrackingsClean.push(t.replace(/[^A-Z0-9]/g, ''));
+        }
         if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
       }
     }
@@ -1107,13 +1112,34 @@ app.get('/api/odoo-outs', async (req, res) => {
       const session = database.activeSessions[carrier];
       if (session && session.packages) {
         for (const pkg of session.packages) {
-          if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+          if (pkg.tracking) {
+            const t = pkg.tracking.toUpperCase().trim();
+            scannedTrackings.add(t);
+            scannedTrackingsClean.push(t.replace(/[^A-Z0-9]/g, ''));
+          }
           if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
         }
       }
     }
 
-    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size);
+    // Función para matching por substring (ASENDIA, CTT, etc.)
+    function matchBySubstring(odooTracking) {
+      if (!odooTracking || odooTracking.length < 7) return false;
+      const clean = odooTracking.replace(/[^A-Z0-9]/g, '');
+      for (const scanned of scannedTrackingsClean) {
+        if (scanned.length >= 15 && clean.length >= 7) {
+          if (scanned.includes(clean) || clean.includes(scanned)) return true;
+          // Match parcial: si los últimos 10+ chars del tracking de Odoo aparecen en el escaneado
+          if (clean.length >= 10) {
+            const suffix = clean.slice(-10);
+            if (scanned.includes(suffix)) return true;
+          }
+        }
+      }
+      return false;
+    }
+
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Barcodes para substring: ' + scannedTrackingsClean.length);
 
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
@@ -1145,7 +1171,7 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
       const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
-      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking));
+      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchBySubstring(tracking);
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
