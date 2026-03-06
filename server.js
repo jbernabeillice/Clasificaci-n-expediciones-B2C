@@ -1139,7 +1139,27 @@ app.get('/api/odoo-outs', async (req, res) => {
       return false;
     }
 
-    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Barcodes para substring: ' + scannedTrackingsClean.length);
+    // Matching via tracking-index: mapea Odoo tracking → Sendcloud tracking (barcode)
+    function matchByIndex(odooTracking) {
+      if (!odooTracking || !trackingIndex.byOdooTracking) return false;
+      const clean = odooTracking.toUpperCase().trim();
+      const entry = trackingIndex.byOdooTracking[clean];
+      if (!entry) return false;
+      // El entry tiene el tracking de Sendcloud, que es lo que se escanea
+      const sendcloudTracking = (entry.tracking || '').toUpperCase().trim();
+      if (!sendcloudTracking) return false;
+      // Comprobar si ese tracking de Sendcloud está en los escaneados
+      if (scannedTrackings.has(sendcloudTracking)) return true;
+      const sendcloudClean = sendcloudTracking.replace(/[^A-Z0-9]/g, '');
+      if (scannedTrackings.has(sendcloudClean)) return true;
+      // También comprobar como substring
+      for (const scanned of scannedTrackingsClean) {
+        if (scanned.includes(sendcloudClean) || sendcloudClean.includes(scanned)) return true;
+      }
+      return false;
+    }
+
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Index entries: ' + Object.keys(trackingIndex.byOdooTracking || {}).length);
 
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
@@ -1171,7 +1191,7 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
       const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
-      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchBySubstring(tracking);
+      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchBySubstring(tracking) || matchByIndex(tracking);
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
