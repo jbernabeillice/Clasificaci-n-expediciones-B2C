@@ -55,9 +55,9 @@ const SENDCLOUD_CARRIER_MAP = {
 
 const CARRIERS = ['ASENDIA', 'CORREOS', 'CORREOS EXPRESS', 'CTT', 'GLS', 'INPOST', 'SPRING'];
 
-// ============================================
+// =============================================
 // CACHÉ SENDCLOUD
-// ============================================
+// =============================================
 let sendcloudCache = { parcels: {} };
 
 function loadSendcloudCache() {
