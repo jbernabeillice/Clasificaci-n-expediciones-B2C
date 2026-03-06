@@ -254,9 +254,9 @@ function findInTrackingIndex(tracking) {
   return null;
 }
 
-// ============================================
+// =============================================
 // AUTO-SYNC
-// ============================================
+// =============================================
 let syncInProgress = false;
 let lastSyncAttempt = null;
 
