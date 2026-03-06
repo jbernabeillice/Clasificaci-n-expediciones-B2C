@@ -1096,9 +1096,11 @@ app.get('/api/odoo-outs', async (req, res) => {
     console.log('   📦 ' + pickings.length + ' OUTs B2C encontrados en Odoo');
 
     const scannedTrackings = new Set();
+    const scannedPickingIds = new Set();
     for (const pallet of Object.values(database.pallets)) {
       for (const pkg of (pallet.packages || [])) {
         if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+        if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
       }
     }
     for (const carrier of CARRIERS) {
@@ -1106,11 +1108,12 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (session && session.packages) {
         for (const pkg of session.packages) {
           if (pkg.tracking) scannedTrackings.add(pkg.tracking.toUpperCase().trim());
+          if (pkg.pickingId) scannedPickingIds.add(pkg.pickingId);
         }
       }
     }
 
-    console.log('   🔍 Trackings en app: ' + scannedTrackings.size);
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size);
 
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
@@ -1142,7 +1145,7 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
       const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
-      const isScanned = tracking.length > 0 && scannedTrackings.has(tracking);
+      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking));
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
