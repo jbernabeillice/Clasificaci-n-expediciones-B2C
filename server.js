@@ -9,9 +9,9 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-// ============================================
+// =============================================
 // CONFIGURACIÓN
-// ============================================
+// =============================================
 const CONFIG = {
   odoo: {
     url: process.env.ODOO_URL || 'https://blackdivision.processcontrol.sh',
