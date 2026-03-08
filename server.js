@@ -1122,44 +1122,34 @@ app.get('/api/odoo-outs', async (req, res) => {
       }
     }
 
-    // Función para matching por substring (ASENDIA, CTT, etc.)
-    function matchBySubstring(odooTracking) {
+    // Pre-extraer trackings embebidos en barcodes (ASENDIA: 6C206... dentro de %)
+    const extractedTrackings = new Set();
+    for (const scanned of scannedTrackingsClean) {
+      // ASENDIA: extraer 6C206XXXXXXXX (13 chars) del barcode
+      const idx6c = scanned.indexOf('6C206');
+      if (idx6c >= 0 && scanned.length >= idx6c + 13) {
+        extractedTrackings.add(scanned.substring(idx6c, idx6c + 13));
+      }
+      // También añadir el tracking limpio completo
+      extractedTrackings.add(scanned);
+    }
+
+    // Matching avanzado: substring + patrones extraídos
+    function matchAdvanced(odooTracking) {
       if (!odooTracking || odooTracking.length < 7) return false;
       const clean = odooTracking.replace(/[^A-Z0-9]/g, '');
+      // 1. Check si el tracking de Odoo está entre los extractedTrackings
+      if (extractedTrackings.has(clean)) return true;
+      // 2. Substring: el tracking de Odoo aparece en algún barcode escaneado
       for (const scanned of scannedTrackingsClean) {
         if (scanned.length >= 15 && clean.length >= 7) {
-          if (scanned.includes(clean) || clean.includes(scanned)) return true;
-          // Match parcial: si los últimos 10+ chars del tracking de Odoo aparecen en el escaneado
-          if (clean.length >= 10) {
-            const suffix = clean.slice(-10);
-            if (scanned.includes(suffix)) return true;
-          }
+          if (scanned.includes(clean)) return true;
         }
       }
       return false;
     }
 
-    // Matching via tracking-index: mapea Odoo tracking → Sendcloud tracking (barcode)
-    function matchByIndex(odooTracking) {
-      if (!odooTracking || !trackingIndex.byOdooTracking) return false;
-      const clean = odooTracking.toUpperCase().trim();
-      const entry = trackingIndex.byOdooTracking[clean];
-      if (!entry) return false;
-      // El entry tiene el tracking de Sendcloud, que es lo que se escanea
-      const sendcloudTracking = (entry.tracking || '').toUpperCase().trim();
-      if (!sendcloudTracking) return false;
-      // Comprobar si ese tracking de Sendcloud está en los escaneados
-      if (scannedTrackings.has(sendcloudTracking)) return true;
-      const sendcloudClean = sendcloudTracking.replace(/[^A-Z0-9]/g, '');
-      if (scannedTrackings.has(sendcloudClean)) return true;
-      // También comprobar como substring
-      for (const scanned of scannedTrackingsClean) {
-        if (scanned.includes(sendcloudClean) || sendcloudClean.includes(scanned)) return true;
-      }
-      return false;
-    }
-
-    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Index entries: ' + Object.keys(trackingIndex.byOdooTracking || {}).length);
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Extracted patterns: ' + extractedTrackings.size);
 
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
@@ -1191,7 +1181,7 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
       const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
-      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchBySubstring(tracking) || matchByIndex(tracking);
+      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchAdvanced(tracking);
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
