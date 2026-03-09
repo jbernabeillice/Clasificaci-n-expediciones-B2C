@@ -427,6 +427,35 @@ async function sync() {
     }
 
     if (!foundMatch) {
+      // CLAVE: Añadir al índice IGUALMENTE por tracking de Odoo
+      // Así al escanear el tracking directo o extraerlo de un QR, se encuentra en <1ms
+      const t = odooTracking.toUpperCase().trim();
+      let detectedCarrier = null;
+      if (/^Z89/.test(t)) detectedCarrier = 'GLS';
+      else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
+      else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
+      else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^6A/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) detectedCarrier = 'SPRING';
+      else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
+      else if (/^C0/.test(t)) detectedCarrier = 'CORREOS';
+
+      const odooOnlyData = {
+        ...pickingData,
+        tracking: odooTracking,
+        carrier: detectedCarrier || 'DESCONOCIDO',
+        source: 'odoo-only'
+      };
+
+      trackingIndex.byOdooTracking[t] = odooOnlyData;
+      // También añadir a byTracking con la key del tracking de Odoo
+      trackingIndex.byTracking[t] = odooOnlyData;
+      // Y a byCarrier si el carrier es conocido
+      if (detectedCarrier && trackingIndex.byCarrier[detectedCarrier]) {
+        trackingIndex.byCarrier[detectedCarrier][t] = odooOnlyData;
+      }
+
       unmatched++;
     }
   }

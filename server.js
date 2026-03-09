@@ -223,12 +223,14 @@ function findInTrackingIndex(tracking) {
     }
   }
 
-  // PASO 4: ASENDIA - Solo match EXACTO por key (el PASO 2.5 maneja barcodes largos)
-  if (clean.length >= 8 && trackingIndex.byCarrier) {
-    var asendiaData = trackingIndex.byCarrier["ASENDIA"];
-    if (asendiaData && asendiaData[clean]) {
-      console.log("   🔍 Match ASENDIA exacto byCarrier: " + clean);
-      return asendiaData[clean];
+  // PASO 3.5: GLS + CORREOS + ASENDIA - Match EXACTO por key en byCarrier
+  if (clean.length >= 5 && trackingIndex.byCarrier) {
+    var carrierChecks = ["GLS", "CORREOS", "ASENDIA", "SPRING", "CTT"];
+    for (var ci = 0; ci < carrierChecks.length; ci++) {
+      var cData = trackingIndex.byCarrier[carrierChecks[ci]];
+      if (cData && cData[clean]) {
+        return cData[clean];
+      }
     }
   }
 
