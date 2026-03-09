@@ -122,6 +122,41 @@ function findInTrackingIndex(tracking) {
     return trackingIndex.byOdooTracking[clean];
   }
 
+  // PASO 2.5: ASENDIA - Extraer tracking embebido del barcode ANTES del matching genérico
+  var asendiaExtract = extractAsendiaTracking(clean);
+  if (asendiaExtract.extracted && !asendiaExtract.isDirectMatch) {
+    var extractedUpper = asendiaExtract.extracted.toUpperCase();
+    // Buscar match exacto en byTracking
+    if (trackingIndex.byTracking && trackingIndex.byTracking[extractedUpper]) {
+      console.log("   🎯 Match ASENDIA extraído (byTracking): " + extractedUpper);
+      return trackingIndex.byTracking[extractedUpper];
+    }
+    // Buscar match exacto en byOdooTracking
+    if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[extractedUpper]) {
+      console.log("   🎯 Match ASENDIA extraído (byOdooTracking): " + extractedUpper);
+      return trackingIndex.byOdooTracking[extractedUpper];
+    }
+    // Buscar en byCarrier ASENDIA por odooTracking exacto
+    var asendiaCarrierData = trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"];
+    if (asendiaCarrierData) {
+      if (asendiaCarrierData[extractedUpper]) {
+        console.log("   🎯 Match ASENDIA extraído (byCarrier key): " + extractedUpper);
+        return asendiaCarrierData[extractedUpper];
+      }
+      var asKeys = Object.keys(asendiaCarrierData);
+      for (var ae = 0; ae < asKeys.length; ae++) {
+        var aeData = asendiaCarrierData[asKeys[ae]];
+        if (aeData.odooTracking && aeData.odooTracking.toUpperCase() === extractedUpper) {
+          console.log("   🎯 Match ASENDIA extraído (odooTracking): " + extractedUpper);
+          return aeData;
+        }
+      }
+    }
+    // Patrón ASENDIA detectado pero no en índice - NO caer al matching genérico
+    console.log("   ⚠️ ASENDIA extraído " + extractedUpper + " no en índice, se buscará en Odoo");
+    return null;
+  }
+
   // PASO 3: CTT/SPRING - Escaneado LARGO (>=18 chars)
   if (clean.length >= 18 && trackingIndex.byCarrier) {
     
@@ -188,36 +223,12 @@ function findInTrackingIndex(tracking) {
     }
   }
 
-  // PASO 4: ASENDIA - Coincidencia parcial (>=8 chars)
+  // PASO 4: ASENDIA - Solo match EXACTO por key (el PASO 2.5 maneja barcodes largos)
   if (clean.length >= 8 && trackingIndex.byCarrier) {
     var asendiaData = trackingIndex.byCarrier["ASENDIA"];
-    if (asendiaData) {
-      var asendiaKeys = Object.keys(asendiaData);
-      for (var k = 0; k < asendiaKeys.length; k++) {
-        var asendiaTrack = asendiaKeys[k];
-        var dataA = asendiaData[asendiaTrack];
-        var odooTrackA = dataA.odooTracking ? dataA.odooTracking.toUpperCase() : asendiaTrack;
-        
-        if (odooTrackA.length >= 8 && clean.indexOf(odooTrackA) !== -1) {
-          console.log("   🔍 Match ASENDIA: contiene " + odooTrackA);
-          return dataA;
-        }
-        
-        if (odooTrackA.length >= 8 && odooTrackA.indexOf(clean) !== -1) {
-          console.log("   🔍 Match ASENDIA inverso: " + odooTrackA + " contiene escaneado");
-          return dataA;
-        }
-        
-        if (odooTrackA.length >= 10) {
-          for (var lenA = Math.min(odooTrackA.length, 15); lenA >= 8; lenA--) {
-            var partialA = odooTrackA.substring(0, lenA);
-            if (clean.indexOf(partialA) !== -1) {
-              console.log("   🔍 Match ASENDIA parcial: contiene " + partialA);
-              return dataA;
-            }
-          }
-        }
-      }
+    if (asendiaData && asendiaData[clean]) {
+      console.log("   🔍 Match ASENDIA exacto byCarrier: " + clean);
+      return asendiaData[clean];
     }
   }
 
@@ -478,10 +489,39 @@ class OdooClient {
 // ============================================
 // EXTRACCIÓN DE PATRONES ESPECIALES
 // ============================================
+
+// Extrae el tracking de Odoo embebido en un barcode ASENDIA
+function extractAsendiaTracking(scannedClean) {
+  // LS-format: LS + 9 digits + 2 letters (ej: LS226449335CH) -> ES el tracking
+  if (/^LS\d{9}[A-Z]{2}$/.test(scannedClean)) {
+    return { extracted: scannedClean, isDirectMatch: true };
+  }
+  // 6A-format: 6A + 11 digits (ej: 6A05155810573) -> ES el tracking
+  if (/^6A\d{11}$/.test(scannedClean)) {
+    return { extracted: scannedClean, isDirectMatch: true };
+  }
+  // 6C20-format ya como tracking (13 chars) -> ES el tracking
+  if (/^6C20\d{9}$/.test(scannedClean)) {
+    return { extracted: scannedClean, isDirectMatch: true };
+  }
+  // Barcode largo con 6C20 embebido -> extraer 13 chars
+  var idx = scannedClean.indexOf('6C20');
+  if (idx >= 0 && scannedClean.length >= idx + 13) {
+    return { extracted: scannedClean.substring(idx, idx + 13), isDirectMatch: false };
+  }
+  // Barcode largo con 6A embebido -> extraer 13 chars
+  idx = scannedClean.indexOf('6A05');
+  if (idx >= 0 && scannedClean.length >= idx + 13) {
+    return { extracted: scannedClean.substring(idx, idx + 13), isDirectMatch: false };
+  }
+  return { extracted: null, isDirectMatch: false };
+}
+
 function extractSpecialPatterns(scanned) {
   const clean = scanned.toUpperCase().trim();
+  const cleanAlnum = clean.replace(/[^A-Z0-9]/g, '');
   const result = { patterns: [clean], detectedCarrier: null };
-  
+
   // GLS QR: Extraer tracking de formato ...ESxxxxxxxxCCE...
   const glsMatch = clean.match(/ES([A-Z][0-9]{2}[A-Z0-9]{5})[A-Z]{2,3}/);
   if (glsMatch) {
@@ -489,7 +529,17 @@ function extractSpecialPatterns(scanned) {
     result.detectedCarrier = 'GLS';
     console.log('   🔍 Patrón GLS extraído: ' + glsMatch[1]);
   }
-  
+
+  // ASENDIA: Extraer tracking embebido
+  if (!result.detectedCarrier) {
+    const asResult = extractAsendiaTracking(cleanAlnum);
+    if (asResult.extracted && !asResult.isDirectMatch) {
+      result.patterns.push(asResult.extracted);
+      result.detectedCarrier = 'ASENDIA';
+      console.log('   🔍 Patrón ASENDIA extraído: ' + asResult.extracted);
+    }
+  }
+
   result.patterns = [...new Set(result.patterns)];
   return result;
 }
@@ -559,8 +609,33 @@ async function getCarrierFromTracking(tracking) {
     }
   }
   
+  // ASENDIA: extraer tracking embebido del barcode
+  const asendiaResult = extractAsendiaTracking(clean.replace(/[^A-Z0-9]/g, ''));
+  if (asendiaResult.extracted && !asendiaResult.isDirectMatch) {
+    const asTracking = asendiaResult.extracted.toUpperCase();
+    // Buscar en índice
+    const asIndex = findInTrackingIndex(asTracking);
+    if (asIndex && asIndex.orderRef) {
+      const elapsed = Date.now() - startTime;
+      console.log('   ⚡ Índice ASENDIA: ' + asTracking + ' (' + elapsed + 'ms)');
+      return {
+        carrier: 'ASENDIA',
+        picking: { id: asIndex.pickingId, name: asIndex.pickingName, carrier_tracking_ref: asIndex.odooTracking, origin: asIndex.orderRef, partner_id: [null, asIndex.clientName] },
+        source: 'index (ASENDIA extraído: ' + asTracking + ')', elapsed
+      };
+    }
+    // Buscar en Odoo con el tracking extraído
+    console.log('   🔍 Buscando ASENDIA en Odoo: ' + asTracking);
+    const asPicking = await odooClient.findPickingByTracking(asTracking);
+    if (asPicking) {
+      const elapsed = Date.now() - startTime;
+      console.log('   ✅ ASENDIA encontrado en Odoo: ' + (asPicking.origin || 'sin pedido'));
+      return { carrier: 'ASENDIA', picking: asPicking, source: 'odoo (ASENDIA extraído: ' + asTracking + ')', elapsed };
+    }
+  }
+
   // FLUJO NORMAL PARA TODOS LOS TRANSPORTISTAS
-  
+
   // 1. Índice pre-calculado
   const indexResult = findInTrackingIndex(clean);
   if (indexResult) {
@@ -1060,6 +1135,39 @@ app.get('/api/stats', (req, res) => {
 // ============================================
 // ENDPOINT INFORME DE COBERTURA
 // ============================================
+// ============================================
+// CONTEO RÁPIDO DE ESCANEOS (sin consultar Odoo)
+// ============================================
+app.get('/api/scan-counts', (req, res) => {
+  const counts = {};
+  let totalSession = 0, totalPallets = 0;
+
+  for (const carrier of CARRIERS) {
+    const session = database.activeSessions[carrier];
+    const sessionCount = (session && session.packages) ? session.packages.length : 0;
+
+    let palletCount = 0;
+    const today = new Date().toISOString().split('T')[0];
+    for (const pallet of Object.values(database.pallets)) {
+      if (pallet.carrier === carrier && pallet.createdAt && pallet.createdAt.startsWith(today)) {
+        palletCount += (pallet.packages || []).length;
+      }
+    }
+
+    counts[carrier] = { session: sessionCount, pallets: palletCount, total: sessionCount + palletCount };
+    totalSession += sessionCount;
+    totalPallets += palletCount;
+  }
+
+  res.json({
+    timestamp: new Date().toISOString(),
+    totalSession,
+    totalPallets,
+    grandTotal: totalSession + totalPallets,
+    byCarrier: counts
+  });
+});
+
 app.get('/api/odoo-outs', async (req, res) => {
   const { from, to } = req.query;
   if (!from || !to) return res.status(400).json({ error: 'Parámetros from y to requeridos (YYYY-MM-DD)' });
@@ -1122,44 +1230,33 @@ app.get('/api/odoo-outs', async (req, res) => {
       }
     }
 
-    // Función para matching por substring (ASENDIA, CTT, etc.)
-    function matchBySubstring(odooTracking) {
-      if (!odooTracking || odooTracking.length < 7) return false;
-      const clean = odooTracking.replace(/[^A-Z0-9]/g, '');
+    // Pre-extraer trackings embebidos en barcodes usando extractAsendiaTracking()
+    const extractedOdooTrackings = new Set();
+    for (const scanned of scannedTrackingsClean) {
+      const asResult = extractAsendiaTracking(scanned);
+      if (asResult.extracted) {
+        extractedOdooTrackings.add(asResult.extracted.toUpperCase());
+      }
+      // También añadir el tracking limpio completo
+      extractedOdooTrackings.add(scanned);
+    }
+
+    // Matching avanzado: patrones extraídos + substring (devuelve el tipo de match)
+    function matchAdvanced(odooTracking) {
+      if (!odooTracking || odooTracking.length < 7) return null;
+      const clean = odooTracking.toUpperCase().replace(/[^A-Z0-9]/g, '');
+      // 1. Check si el tracking de Odoo está entre los extractedOdooTrackings
+      if (extractedOdooTrackings.has(clean)) return 'extractedTracking';
+      // 2. Substring: el tracking de Odoo aparece dentro de algún barcode escaneado (CTT, largos)
       for (const scanned of scannedTrackingsClean) {
         if (scanned.length >= 15 && clean.length >= 7) {
-          if (scanned.includes(clean) || clean.includes(scanned)) return true;
-          // Match parcial: si los últimos 10+ chars del tracking de Odoo aparecen en el escaneado
-          if (clean.length >= 10) {
-            const suffix = clean.slice(-10);
-            if (scanned.includes(suffix)) return true;
-          }
+          if (scanned.includes(clean)) return 'substring';
         }
       }
-      return false;
+      return null;
     }
 
-    // Matching via tracking-index: mapea Odoo tracking → Sendcloud tracking (barcode)
-    function matchByIndex(odooTracking) {
-      if (!odooTracking || !trackingIndex.byOdooTracking) return false;
-      const clean = odooTracking.toUpperCase().trim();
-      const entry = trackingIndex.byOdooTracking[clean];
-      if (!entry) return false;
-      // El entry tiene el tracking de Sendcloud, que es lo que se escanea
-      const sendcloudTracking = (entry.tracking || '').toUpperCase().trim();
-      if (!sendcloudTracking) return false;
-      // Comprobar si ese tracking de Sendcloud está en los escaneados
-      if (scannedTrackings.has(sendcloudTracking)) return true;
-      const sendcloudClean = sendcloudTracking.replace(/[^A-Z0-9]/g, '');
-      if (scannedTrackings.has(sendcloudClean)) return true;
-      // También comprobar como substring
-      for (const scanned of scannedTrackingsClean) {
-        if (scanned.includes(sendcloudClean) || sendcloudClean.includes(scanned)) return true;
-      }
-      return false;
-    }
-
-    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Index entries: ' + Object.keys(trackingIndex.byOdooTracking || {}).length);
+    console.log('   🔍 Trackings en app: ' + scannedTrackings.size + ' | PickingIDs: ' + scannedPickingIds.size + ' | Extracted patterns: ' + extractedOdooTrackings.size);
 
     const byCarrier = {};
     for (const c of [...CARRIERS, 'DESCONOCIDO']) {
@@ -1181,8 +1278,10 @@ app.get('/api/odoo-outs', async (req, res) => {
         if (/^PK/.test(t)) carrier = 'CORREOS';
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
-        else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) carrier = 'SPRING';
+        else if (/^6C20/.test(t)) carrier = 'ASENDIA';
         else if (/^6A/.test(t)) carrier = 'ASENDIA';
+        else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
+        else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) carrier = 'SPRING';
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
       }
@@ -1191,7 +1290,15 @@ app.get('/api/odoo-outs', async (req, res) => {
       if (!byCarrier[key]) byCarrier[key] = { total: 0, scanned: 0, missing: 0, pct: 0, records: [] };
 
       const tracking  = (picking.carrier_tracking_ref || '').toUpperCase().trim();
-      const isScanned = scannedPickingIds.has(picking.id) || (tracking.length > 0 && scannedTrackings.has(tracking)) || matchBySubstring(tracking) || matchByIndex(tracking);
+      let matchSource = null;
+      if (scannedPickingIds.has(picking.id)) {
+        matchSource = 'pickingId';
+      } else if (tracking.length > 0 && scannedTrackings.has(tracking)) {
+        matchSource = 'exactTracking';
+      } else {
+        matchSource = matchAdvanced(tracking);
+      }
+      const isScanned = matchSource !== null;
 
       byCarrier[key].total++;
       if (isScanned) byCarrier[key].scanned++;
@@ -1205,7 +1312,8 @@ app.get('/api/odoo-outs', async (req, res) => {
         saleOrder:   picking.sale_id   ? picking.sale_id[1]   : '',
         origin:      picking.origin || '',
         dateDone:    picking.date_done || '',
-        scanned:     isScanned
+        scanned:     isScanned,
+        matchSource: matchSource
       });
     }
 

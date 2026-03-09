@@ -214,14 +214,12 @@ function matchTracking(sendcloudTracking, odooTracking, carrier) {
     if (odooTrack.length >= 10 && scTrack.includes(odooTrack)) return true;
   }
 
-  // ASENDIA: El tracking de Odoo puede estar contenido en Sendcloud o viceversa
-  // Ejemplo: Odoo: "6c20544233870" → Sendcloud podría ser diferente
+  // ASENDIA: Solo match exacto - los trackings de Sendcloud y Odoo son diferentes identificadores
+  // Barcodes físicos contienen el tracking de Odoo embebido (6C20XXXXXXXXX) pero
+  // el tracking de Sendcloud es un identificador distinto. Substring matching causa falsos positivos.
   if (carrier === 'ASENDIA') {
-    if (scTrack.includes(odooTrack)) return true;
-    if (odooTrack.includes(scTrack)) return true;
-    // Comparar ignorando case
-    if (scTrack.toLowerCase().includes(odooTrack.toLowerCase())) return true;
-    if (odooTrack.toLowerCase().includes(scTrack.toLowerCase())) return true;
+    // Solo permitir match si los trackings son idénticos (ya chequeado arriba)
+    return false;
   }
 
   return false;
