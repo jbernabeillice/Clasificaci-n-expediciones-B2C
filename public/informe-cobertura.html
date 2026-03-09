@@ -151,6 +151,26 @@
   .pag-btn:disabled { opacity: 0.3; cursor: not-allowed; }
   .pag-btn.active { border-color: var(--accent); color: var(--accent); }
 
+  /* LIVE PANEL */
+  .live-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; }
+  .live-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin-top: 12px; }
+  .live-item { background: var(--surface2); border-radius: 8px; padding: 10px; text-align: center; }
+  .live-item .lv { font-family: var(--font-mono); font-size: 20px; font-weight: 700; }
+  .live-item .ll { font-family: var(--font-mono); font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.1em; margin-top: 2px; }
+
+  /* VERIFY TOOL */
+  .verify-panel { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px 24px; margin-bottom: 20px; }
+  .verify-input { display: flex; gap: 10px; margin-top: 10px; }
+  .verify-input input { flex: 1; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; color: var(--text); font-family: var(--font-mono); font-size: 13px; padding: 10px 13px; outline: none; }
+  .verify-input input:focus { border-color: var(--accent); }
+  .verify-result { margin-top: 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; }
+  .verify-result .vr-row { display: flex; gap: 8px; }
+  .verify-result .vr-label { color: var(--muted); min-width: 100px; }
+
+  /* MATCH PILL */
+  .p-blue { background: rgba(96,165,250,.1); color: var(--accent4); }
+  .p-purple { background: rgba(167,139,250,.1); color: #a78bfa; }
+
   /* MISC */
   .empty-state { text-align: center; padding: 56px 24px; color: var(--muted); }
   .empty-state .icon { font-size: 34px; margin-bottom: 10px; }
@@ -203,6 +223,24 @@
     <button class="btn btn-ghost" id="exportBtn" onclick="exportExcel()" style="display:none;">
   &#8595; Exportar Excel
 </button>
+  </div>
+
+  <!-- Live scan counts -->
+  <div class="live-panel" id="livePanel">
+    <div class="section-title" style="margin-bottom:0">Progreso en tiempo real <small id="liveTime">cargando...</small></div>
+    <div class="live-grid" id="liveGrid">
+      <div class="live-item"><div class="lv" id="liveTotal">&mdash;</div><div class="ll">Total escaneados</div></div>
+    </div>
+  </div>
+
+  <!-- Barcode verify tool -->
+  <div class="verify-panel">
+    <div class="section-title" style="margin-bottom:0">Verificar barcode</div>
+    <div class="verify-input">
+      <input type="text" id="verifyBarcode" placeholder="Pega o escanea un barcode..." onkeydown="if(event.key==='Enter')verifyBarcode()">
+      <button class="btn" onclick="verifyBarcode()" style="flex-shrink:0">Verificar</button>
+    </div>
+    <div class="verify-result" id="verifyResult"></div>
   </div>
 
   <div class="progress-bar-wrap" id="progressWrap">
@@ -292,6 +330,7 @@
             <th onclick="sortBy('origin')"    id="th-origin">Pedido</th>
             <th onclick="sortBy('client')"    id="th-client">Cliente</th>
             <th onclick="sortBy('dateDone')"  id="th-dateDone">Validado en Odoo &#8595;</th>
+            <th onclick="sortBy('matchSource')" id="th-matchSource">Match</th>
             <th onclick="sortBy('scanned')"   id="th-scanned">Estado app</th>
           </tr>
         </thead>
@@ -640,9 +679,15 @@ function applyAndRender() {
 
   const tbody=document.getElementById('tableBody');
   tbody.innerHTML = slice.length===0
-    ? `<tr><td colspan="7" style="text-align:center;color:var(--muted);padding:32px;">Sin resultados</td></tr>`
+    ? `<tr><td colspan="8" style="text-align:center;color:var(--muted);padding:32px;">Sin resultados</td></tr>`
     : slice.map(r=>{
         const col=CCOLOR[r.carrier]||'#888';
+        const ms = r.matchSource;
+        const matchPill = ms==='pickingId' ? '<span class="pill p-blue">pickingId</span>'
+          : ms==='exactTracking' ? '<span class="pill p-green">tracking exacto</span>'
+          : ms==='extractedTracking' ? '<span class="pill p-purple">extraido</span>'
+          : ms==='substring' ? '<span class="pill p-blue">substring</span>'
+          : '<span style="color:var(--muted);font-size:11px;">\u2014</span>';
         return `<tr>
           <td><span style="display:inline-flex;align-items:center;gap:6px;">
             <span style="width:7px;height:7px;border-radius:50%;background:${col};flex-shrink:0;"></span>
@@ -653,6 +698,7 @@ function applyAndRender() {
           <td class="mono">${r.origin||'\u2014'}</td>
           <td style="font-size:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${r.client||''}">${r.client||'\u2014'}</td>
           <td class="mono" style="font-size:11px;color:var(--muted);white-space:nowrap;">${fmtDT(r.dateDone)}</td>
+          <td>${matchPill}</td>
           <td><span class="pill ${r.scanned?'p-green':'p-red'}">${r.scanned?'\u2705 Escaneado':'\u274c Sin escanear'}</span></td>
         </tr>`;
       }).join('');
@@ -744,7 +790,7 @@ function exportExcel(soloSinEscanear) {
 
   // HOJA 3: TODOS
   const todos = [
-    ['Transportista', 'Albar\u00e1n', 'N\u00ba Pedido', 'Tracking', 'Cliente', 'Fecha validaci\u00f3n Odoo', 'Estado app'],
+    ['Transportista', 'Albar\u00e1n', 'N\u00ba Pedido', 'Tracking', 'Cliente', 'Fecha validaci\u00f3n Odoo', 'Match', 'Estado app'],
     ...allRecs.map(r => [
       r.carrier,
       r.name || '',
@@ -752,6 +798,7 @@ function exportExcel(soloSinEscanear) {
       r.tracking || '',
       r.client || '',
       r.dateDone ? fmtDT(r.dateDone) : '',
+      r.matchSource || '',
       r.scanned ? 'Escaneado' : 'Sin escanear'
     ])
   ];
@@ -788,6 +835,66 @@ function exportExcel(soloSinEscanear) {
   a.download = 'cobertura-' + report.from + '-' + report.to + '.xls';
   a.click();
   URL.revokeObjectURL(a.href);
+}
+
+// ================================================================
+// LIVE SCAN COUNTS (auto-refresh)
+// ================================================================
+async function loadLiveCounts() {
+  try {
+    const data = await apiFetch('/api/scan-counts');
+    const grid = document.getElementById('liveGrid');
+    let html = `<div class="live-item"><div class="lv" style="color:var(--accent)">${data.grandTotal}</div><div class="ll">Total hoy</div></div>`;
+    html += `<div class="live-item"><div class="lv" style="color:var(--accent4)">${data.totalSession}</div><div class="ll">En sesi\u00f3n</div></div>`;
+    html += `<div class="live-item"><div class="lv">${data.totalPallets}</div><div class="ll">En palets</div></div>`;
+    for (const [carrier, c] of Object.entries(data.byCarrier || {})) {
+      if (c.total === 0) continue;
+      const col = CCOLOR[carrier] || '#888';
+      html += `<div class="live-item"><div class="lv" style="color:${col}">${c.total}</div><div class="ll">${carrier}</div></div>`;
+    }
+    grid.innerHTML = html;
+    document.getElementById('liveTime').textContent = new Date().toLocaleTimeString('es-ES');
+  } catch(e) {
+    document.getElementById('liveTime').textContent = 'error: ' + e.message;
+  }
+}
+loadLiveCounts();
+setInterval(loadLiveCounts, 30000);
+
+// ================================================================
+// BARCODE VERIFY TOOL
+// ================================================================
+async function verifyBarcode() {
+  const input = document.getElementById('verifyBarcode').value.trim();
+  if (!input) return;
+  const el = document.getElementById('verifyResult');
+  el.innerHTML = '<span class="spinner"></span> Verificando...';
+  try {
+    const data = await apiFetch('/api/detect-carrier/' + encodeURIComponent(input));
+    let html = '';
+    if (data.carrier) {
+      html += `<div class="vr-row"><span class="vr-label">Transportista:</span><span style="font-weight:700;color:${CCOLOR[data.carrier]||'#888'}">${data.carrier}</span></div>`;
+    } else {
+      html += `<div class="vr-row"><span class="vr-label">Transportista:</span><span style="color:var(--accent3)">No detectado</span></div>`;
+    }
+    if (data.picking) {
+      const p = data.picking;
+      html += `<div class="vr-row"><span class="vr-label">Picking ID:</span><span>${p.id || '\u2014'}</span></div>`;
+      html += `<div class="vr-row"><span class="vr-label">Albar\u00e1n:</span><span>${p.name || '\u2014'}</span></div>`;
+      html += `<div class="vr-row"><span class="vr-label">Pedido:</span><span>${p.origin || '\u2014'}</span></div>`;
+      const client = p.partner_id ? (Array.isArray(p.partner_id) ? p.partner_id[1] : p.partner_id) : '\u2014';
+      html += `<div class="vr-row"><span class="vr-label">Cliente:</span><span>${client}</span></div>`;
+      html += `<div class="vr-row"><span class="vr-label">Tracking Odoo:</span><span class="mono">${p.carrier_tracking_ref || '\u2014'}</span></div>`;
+    } else {
+      html += `<div class="vr-row"><span class="vr-label">Picking:</span><span style="color:var(--accent3)">No encontrado en Odoo ni en \u00edndice</span></div>`;
+    }
+    if (data.source) {
+      html += `<div class="vr-row"><span class="vr-label">Fuente:</span><span style="color:var(--muted)">${data.source}</span></div>`;
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    el.innerHTML = `<span style="color:var(--accent3)">Error: ${e.message}</span>`;
+  }
 }
 </script>
 </body>
