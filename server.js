@@ -1274,7 +1274,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^6C20/.test(t)) carrier = 'ASENDIA';
         else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
-        else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) carrier = 'SPRING';
+        else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^H10|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
       }
