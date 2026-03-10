@@ -435,7 +435,7 @@ async function sync() {
       else if (/^PK/.test(t)) detectedCarrier = 'CORREOS';
       else if (/^MI/.test(t)) detectedCarrier = 'CORREOS EXPRESS';
       else if (/^6C20/.test(t)) detectedCarrier = 'ASENDIA';
-      else if (/^6A/.test(t)) detectedCarrier = 'ASENDIA';
+      else if (/^6A/.test(t)) detectedCarrier = 'SPRING';
       else if (/^LS\d{9}[A-Z]{2}$/.test(t)) detectedCarrier = 'ASENDIA';
       else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) detectedCarrier = 'SPRING';
       else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
