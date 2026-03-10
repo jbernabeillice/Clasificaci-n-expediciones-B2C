@@ -498,21 +498,12 @@ function extractAsendiaTracking(scannedClean) {
   if (/^LS\d{9}[A-Z]{2}$/.test(scannedClean)) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
-  // 6A-format: 6A + 11 digits (ej: 6A05155810573) -> ES el tracking
-  if (/^6A\d{11}$/.test(scannedClean)) {
-    return { extracted: scannedClean, isDirectMatch: true };
-  }
   // 6C20-format ya como tracking (13 chars) -> ES el tracking
   if (/^6C20\d{9}$/.test(scannedClean)) {
     return { extracted: scannedClean, isDirectMatch: true };
   }
   // Barcode largo con 6C20 embebido -> extraer 13 chars
   var idx = scannedClean.indexOf('6C20');
-  if (idx >= 0 && scannedClean.length >= idx + 13) {
-    return { extracted: scannedClean.substring(idx, idx + 13), isDirectMatch: false };
-  }
-  // Barcode largo con 6A embebido -> extraer 13 chars
-  idx = scannedClean.indexOf('6A05');
   if (idx >= 0 && scannedClean.length >= idx + 13) {
     return { extracted: scannedClean.substring(idx, idx + 13), isDirectMatch: false };
   }
@@ -1281,7 +1272,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^MI/.test(t)) carrier = 'CORREOS EXPRESS';
         else if (/^Z89/.test(t)) carrier = 'GLS';
         else if (/^6C20/.test(t)) carrier = 'ASENDIA';
-        else if (/^6A/.test(t)) carrier = 'ASENDIA';
+        else if (/^6A/.test(t)) carrier = 'SPRING';
         else if (/^LS\d{9}[A-Z]{2}$/.test(t)) carrier = 'ASENDIA';
         else if (/^LS|^LX|^LV|^LT|^3[A-Z]/.test(t)) carrier = 'SPRING';
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
