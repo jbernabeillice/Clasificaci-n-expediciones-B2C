@@ -122,6 +122,21 @@ function findInTrackingIndex(tracking) {
     return trackingIndex.byOdooTracking[clean];
   }
 
+  // PASO 2.3: ASENDIA - Si tracking empieza con 6C20 y no tuvo match exacto,
+  // intentar prefijo de 12 chars (último dígito puede variar entre barcode y tracking Odoo)
+  // Ej: barcode extrae 6C20629705008, Odoo tiene 6C20629705001 (comparten 6C2062970500)
+  if (/^6C20/.test(clean) && clean.length >= 12 && trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"]) {
+    var prefix12 = clean.substring(0, 12);
+    var asCarrierData = trackingIndex.byCarrier["ASENDIA"];
+    var asCarrierKeys = Object.keys(asCarrierData);
+    for (var px = 0; px < asCarrierKeys.length; px++) {
+      if (asCarrierKeys[px].substring(0, 12) === prefix12) {
+        console.log("   🎯 Match ASENDIA prefijo 12: " + asCarrierKeys[px] + " (buscado: " + clean + ")");
+        return asCarrierData[asCarrierKeys[px]];
+      }
+    }
+  }
+
   // PASO 2.5: ASENDIA - Extraer tracking embebido del barcode ANTES del matching genérico
   var asendiaExtract = extractAsendiaTracking(clean);
   if (asendiaExtract.extracted && !asendiaExtract.isDirectMatch) {
@@ -149,6 +164,26 @@ function findInTrackingIndex(tracking) {
         if (aeData.odooTracking && aeData.odooTracking.toUpperCase() === extractedUpper) {
           console.log("   🎯 Match ASENDIA extraído (odooTracking): " + extractedUpper);
           return aeData;
+        }
+      }
+    }
+    // FALLBACK: prefijo de 12 chars - el último dígito del barcode puede diferir del tracking Odoo
+    // Ej: barcode extrae 6C20629705008 pero Odoo tiene 6C20629705001 (comparten 12 chars)
+    if (extractedUpper.length >= 12) {
+      var prefix12ext = extractedUpper.substring(0, 12);
+      var asFallbackData = trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"];
+      if (asFallbackData) {
+        var asFbKeys = Object.keys(asFallbackData);
+        for (var afb = 0; afb < asFbKeys.length; afb++) {
+          if (asFbKeys[afb].substring(0, 12) === prefix12ext) {
+            console.log("   🎯 Match ASENDIA prefijo 12: " + asFbKeys[afb] + " (extraído: " + extractedUpper + ")");
+            return asFallbackData[asFbKeys[afb]];
+          }
+          var afbData = asFallbackData[asFbKeys[afb]];
+          if (afbData.odooTracking && afbData.odooTracking.toUpperCase().substring(0, 12) === prefix12ext) {
+            console.log("   🎯 Match ASENDIA prefijo 12 (odoo): " + afbData.odooTracking + " (extraído: " + extractedUpper + ")");
+            return afbData;
+          }
         }
       }
     }
