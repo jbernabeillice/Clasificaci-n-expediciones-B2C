@@ -268,15 +268,10 @@ function findInTrackingIndex(tracking) {
           }
         }
         
-        if (odooTrackS.length >= 10) {
-          for (var lenS = Math.min(odooTrackS.length, 17); lenS >= 10; lenS--) {
-            var partialS = odooTrackS.substring(0, lenS);
-            if (clean.indexOf(partialS) !== -1) {
-              console.log("   🔍 Match SPRING parcial: contiene " + partialS + " (" + lenS + "/" + odooTrackS.length + " chars)");
-              return dataS;
-            }
-          }
-        }
+        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
+        // Ej: barcode 000234406265024591287328040 contenía los primeros 10 chars (0626502459)
+        // de OTRO tracking SPRING (KA281275) antes de encontrar el correcto (06265024591287)
+        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
   }
@@ -490,10 +485,20 @@ class OdooClient {
         if (pattern.length >= 7) {
           pickings = await this.execute('stock.picking', 'search_read', [
             [['carrier_tracking_ref', 'ilike', pattern], ['state', '=', 'done'], ['picking_type_code', '=', 'outgoing']]
-          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 1 });
+          ], { fields: ['id', 'name', 'carrier_tracking_ref', 'manual_expedition_date', 'state', 'partner_id', 'origin', 'carrier_id'], limit: 10 });
           if (pickings.length > 0) {
-            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + pickings[0].carrier_tracking_ref);
-            return pickings[0];
+            // Si hay múltiples resultados, elegir el que mejor coincida con el barcode escaneado
+            const best = pickings.reduce((a, b) => {
+              const cleanUpper = tracking.toUpperCase();
+              const trackA = (a.carrier_tracking_ref || '').toUpperCase();
+              const trackB = (b.carrier_tracking_ref || '').toUpperCase();
+              let scoreA = 0, scoreB = 0;
+              while (scoreA < trackA.length && scoreA < cleanUpper.length && trackA[scoreA] === cleanUpper[scoreA]) scoreA++;
+              while (scoreB < trackB.length && scoreB < cleanUpper.length && trackB[scoreB] === cleanUpper[scoreB]) scoreB++;
+              return scoreB > scoreA ? b : a;
+            });
+            console.log('   🔍 Match patrón Odoo: "' + pattern + '" → ' + best.carrier_tracking_ref + ' (mejor de ' + pickings.length + ')');
+            return best;
           }
         }
       }
@@ -732,13 +737,16 @@ async function getCarrierFromTracking(tracking) {
           source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
         };
       }
-      // Fallback: buscar en Odoo con el tracking extraído
-      console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
-      const ipPicking = await odooClient.findPickingByTracking(ipTracking);
-      if (ipPicking) {
-        const elapsed = Date.now() - startTime;
-        console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
-        return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+      // Solo buscar en Odoo si el tracking parece genuinamente INPOST (prefijos 04/81)
+      // Evita llamadas Odoo innecesarias para barcodes numéricos de otros carriers
+      if (/^(04|81)\d{6}$/.test(ipTracking)) {
+        console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
+        const ipPicking = await odooClient.findPickingByTracking(ipTracking);
+        if (ipPicking) {
+          const elapsed = Date.now() - startTime;
+          console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
+          return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+        }
       }
     }
   }
