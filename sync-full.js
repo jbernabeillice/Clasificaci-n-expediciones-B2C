@@ -440,6 +440,7 @@ async function sync() {
       else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^H10|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) detectedCarrier = 'SPRING';
       else if (/^CTT|^EA/.test(t)) detectedCarrier = 'CTT';
       else if (/^C0/.test(t)) detectedCarrier = 'CORREOS';
+      else if (/^\d{8}$/.test(t)) detectedCarrier = 'INPOST';
 
       const odooOnlyData = {
         ...pickingData,
