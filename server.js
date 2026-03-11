@@ -122,6 +122,21 @@ function findInTrackingIndex(tracking) {
     return trackingIndex.byOdooTracking[clean];
   }
 
+  // PASO 2.3: ASENDIA - Si tracking empieza con 6C20 y no tuvo match exacto,
+  // intentar prefijo de 12 chars (último dígito puede variar entre barcode y tracking Odoo)
+  // Ej: barcode extrae 6C20629705008, Odoo tiene 6C20629705001 (comparten 6C2062970500)
+  if (/^6C20/.test(clean) && clean.length >= 12 && trackingIndex.byCarrier && trackingIndex.byCarrier["ASENDIA"]) {
+    var prefix12 = clean.substring(0, 12);
+    var asCarrierData = trackingIndex.byCarrier["ASENDIA"];
+    var asCarrierKeys = Object.keys(asCarrierData);
+    for (var px = 0; px < asCarrierKeys.length; px++) {
+      if (asCarrierKeys[px].substring(0, 12) === prefix12) {
+        console.log("   🎯 Match ASENDIA prefijo 12: " + asCarrierKeys[px] + " (buscado: " + clean + ")");
+        return asCarrierData[asCarrierKeys[px]];
+      }
+    }
+  }
+
   // PASO 2.5: ASENDIA - Extraer tracking embebido del barcode ANTES del matching genérico
   var asendiaExtract = extractAsendiaTracking(clean);
   if (asendiaExtract.extracted && !asendiaExtract.isDirectMatch) {
@@ -151,10 +166,55 @@ function findInTrackingIndex(tracking) {
           return aeData;
         }
       }
+      // FALLBACK: prefijo de 12 chars - el último dígito del barcode puede diferir del tracking Odoo
+      // Ej: barcode extrae 6C20629705008 pero Odoo tiene 6C20629705001 (comparten 12 chars)
+      if (extractedUpper.length >= 12) {
+        var prefix12 = extractedUpper.substring(0, 12);
+        for (var ap = 0; ap < asKeys.length; ap++) {
+          if (asKeys[ap].substring(0, 12) === prefix12) {
+            console.log("   🎯 Match ASENDIA prefijo 12: " + asKeys[ap] + " (extraído: " + extractedUpper + ")");
+            return asendiaCarrierData[asKeys[ap]];
+          }
+          var apData = asendiaCarrierData[asKeys[ap]];
+          if (apData.odooTracking && apData.odooTracking.toUpperCase().substring(0, 12) === prefix12) {
+            console.log("   🎯 Match ASENDIA prefijo 12 (odoo): " + apData.odooTracking + " (extraído: " + extractedUpper + ")");
+            return apData;
+          }
+        }
+      }
     }
     // Patrón ASENDIA detectado pero no en índice - NO caer al matching genérico
     console.log("   ⚠️ ASENDIA extraído " + extractedUpper + " no en índice, se buscará en Odoo");
     return null;
+  }
+
+  // PASO 2.6: INPOST - Extraer tracking de 8 dígitos embebido en barcode largo
+  if (clean.length > 10 && /^\d+$/.test(clean)) {
+    var inpostExtract = extractInpostTracking(clean);
+    if (inpostExtract.extracted && !inpostExtract.isDirectMatch) {
+      var ipTracking = inpostExtract.extracted;
+      // Buscar en byCarrier INPOST
+      if (trackingIndex.byCarrier && trackingIndex.byCarrier["INPOST"] && trackingIndex.byCarrier["INPOST"][ipTracking]) {
+        console.log("   🎯 Match INPOST extraído (pos 2-9): " + ipTracking);
+        return trackingIndex.byCarrier["INPOST"][ipTracking];
+      }
+      // Buscar en byOdooTracking
+      if (trackingIndex.byOdooTracking && trackingIndex.byOdooTracking[ipTracking]) {
+        var ipData = trackingIndex.byOdooTracking[ipTracking];
+        if (ipData.carrier === 'INPOST') {
+          console.log("   🎯 Match INPOST extraído (byOdoo): " + ipTracking);
+          return ipData;
+        }
+      }
+      // Buscar en byTracking
+      if (trackingIndex.byTracking && trackingIndex.byTracking[ipTracking]) {
+        var ipData2 = trackingIndex.byTracking[ipTracking];
+        if (ipData2.carrier === 'INPOST') {
+          console.log("   🎯 Match INPOST extraído (byTracking): " + ipTracking);
+          return ipData2;
+        }
+      }
+    }
   }
 
   // PASO 3: CTT/SPRING - Escaneado LARGO (>=18 chars)
@@ -504,6 +564,24 @@ function extractAsendiaTracking(scannedClean) {
   return { extracted: null, isDirectMatch: false };
 }
 
+// INPOST: Barcodes largos (todo numérico) contienen tracking de 8 dígitos embebido
+// Formato observado: 13 + [8 dígitos tracking] + sufijo numérico
+// Ejemplo: 130486133001010401330148898 → tracking = 04861330
+function extractInpostTracking(scannedClean) {
+  // Match directo: tracking de 8 dígitos
+  if (/^\d{8}$/.test(scannedClean)) {
+    return { extracted: scannedClean, isDirectMatch: true };
+  }
+  // Barcode largo numérico: extraer 8 dígitos desde posición 2
+  if (scannedClean.length >= 10 && /^\d+$/.test(scannedClean)) {
+    var candidate = scannedClean.substring(2, 10);
+    if (/^\d{8}$/.test(candidate)) {
+      return { extracted: candidate, isDirectMatch: false };
+    }
+  }
+  return { extracted: null, isDirectMatch: false };
+}
+
 function extractSpecialPatterns(scanned) {
   const clean = scanned.toUpperCase().trim();
   const cleanAlnum = clean.replace(/[^A-Z0-9]/g, '');
@@ -618,6 +696,34 @@ async function getCarrierFromTracking(tracking) {
       const elapsed = Date.now() - startTime;
       console.log('   ✅ ASENDIA encontrado en Odoo: ' + (asPicking.origin || 'sin pedido'));
       return { carrier: 'ASENDIA', picking: asPicking, source: 'odoo (ASENDIA extraído: ' + asTracking + ')', elapsed };
+    }
+  }
+
+  // INPOST: extraer tracking de 8 dígitos embebido en barcode largo numérico
+  const cleanAlnum = clean.replace(/[^A-Z0-9]/g, '');
+  if (cleanAlnum.length > 10 && /^\d+$/.test(cleanAlnum)) {
+    const inpostResult = extractInpostTracking(cleanAlnum);
+    if (inpostResult.extracted && !inpostResult.isDirectMatch) {
+      const ipTracking = inpostResult.extracted;
+      // Buscar en índice
+      const ipIndex = findInTrackingIndex(ipTracking);
+      if (ipIndex && ipIndex.carrier === 'INPOST') {
+        const elapsed = Date.now() - startTime;
+        console.log('   ⚡ Índice INPOST: ' + ipTracking + ' (' + elapsed + 'ms)');
+        return {
+          carrier: 'INPOST',
+          picking: { id: ipIndex.pickingId, name: ipIndex.pickingName, carrier_tracking_ref: ipIndex.odooTracking, origin: ipIndex.orderRef, partner_id: [null, ipIndex.clientName] },
+          source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
+        };
+      }
+      // Fallback: buscar en Odoo con el tracking extraído
+      console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
+      const ipPicking = await odooClient.findPickingByTracking(ipTracking);
+      if (ipPicking) {
+        const elapsed = Date.now() - startTime;
+        console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
+        return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+      }
     }
   }
 
@@ -1217,12 +1323,17 @@ app.get('/api/odoo-outs', async (req, res) => {
       }
     }
 
-    // Pre-extraer trackings embebidos en barcodes usando extractAsendiaTracking()
+    // Pre-extraer trackings embebidos en barcodes usando extractAsendiaTracking() e extractInpostTracking()
     const extractedOdooTrackings = new Set();
     for (const scanned of scannedTrackingsClean) {
       const asResult = extractAsendiaTracking(scanned);
       if (asResult.extracted) {
         extractedOdooTrackings.add(asResult.extracted.toUpperCase());
+      }
+      // INPOST: extraer 8 dígitos de barcode largo numérico
+      const ipResult = extractInpostTracking(scanned);
+      if (ipResult.extracted) {
+        extractedOdooTrackings.add(ipResult.extracted.toUpperCase());
       }
       // También añadir el tracking limpio completo
       extractedOdooTrackings.add(scanned);
@@ -1271,6 +1382,7 @@ app.get('/api/odoo-outs', async (req, res) => {
         else if (/^LS|^LX|^LV|^LT|^3[A-Z]|^H10|^CP|^Z96|^XSMT|^0008|^0626/.test(t)) carrier = 'SPRING';
         else if (/^CTT|^EA/.test(t)) carrier = 'CTT';
         else if (/^C0/.test(t)) carrier = 'CORREOS';
+        else if (/^\d{8}$/.test(t)) carrier = 'INPOST';
       }
 
       const key = carrier || 'DESCONOCIDO';
