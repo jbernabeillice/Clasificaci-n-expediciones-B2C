@@ -179,15 +179,9 @@ function findInTrackingIndex(tracking) {
           }
         }
         
-        if (odooTrack.length >= 10) {
-          for (var len = Math.min(odooTrack.length, 17); len >= 10; len--) {
-            var partial = odooTrack.substring(0, len);
-            if (clean.indexOf(partial) !== -1) {
-              console.log("   🔍 Match CTT parcial: contiene " + partial + " (" + len + "/" + odooTrack.length + " chars)");
-              return data;
-            }
-          }
-        }
+        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
+        // porque todos los CTT comparten prefijo largo (ej: 00030100030197015)
+        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
     
