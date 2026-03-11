@@ -268,15 +268,10 @@ function findInTrackingIndex(tracking) {
           }
         }
         
-        if (odooTrackS.length >= 10) {
-          for (var lenS = Math.min(odooTrackS.length, 17); lenS >= 10; lenS--) {
-            var partialS = odooTrackS.substring(0, lenS);
-            if (clean.indexOf(partialS) !== -1) {
-              console.log("   🔍 Match SPRING parcial: contiene " + partialS + " (" + lenS + "/" + odooTrackS.length + " chars)");
-              return dataS;
-            }
-          }
-        }
+        // ELIMINADO: matching parcial (substring 10-17 chars) causaba falsos positivos
+        // Ej: barcode contenía los primeros 10 chars de otro tracking SPRING (KA281275)
+        // cuando el tracking correcto completo (06265024591287) estaba más adelante en el índice
+        // Solo se permite match exacto completo (indexOf del odooTrack entero)
       }
     }
   }
@@ -701,6 +696,18 @@ async function getCarrierFromTracking(tracking) {
       console.log('   ✅ ASENDIA encontrado en Odoo: ' + (asPicking.origin || 'sin pedido'));
       return { carrier: 'ASENDIA', picking: asPicking, source: 'odoo (ASENDIA extraído: ' + asTracking + ')', elapsed };
     }
+    // Fallback Odoo: buscar con prefijo de 12 chars (último dígito barcode puede diferir)
+    // Ej: barcode extrae 6C20625207088 pero Odoo tiene 6C20625207080
+    if (asTracking.length >= 12) {
+      const asPrefix12 = asTracking.substring(0, 12);
+      console.log('   🔍 Buscando ASENDIA prefijo 12 en Odoo: ' + asPrefix12);
+      const asPickingPrefix = await odooClient.findPickingByTracking(asPrefix12);
+      if (asPickingPrefix) {
+        const elapsed = Date.now() - startTime;
+        console.log('   ✅ ASENDIA prefijo encontrado en Odoo: ' + (asPickingPrefix.origin || 'sin pedido'));
+        return { carrier: 'ASENDIA', picking: asPickingPrefix, source: 'odoo (ASENDIA prefijo: ' + asPrefix12 + ')', elapsed };
+      }
+    }
   }
 
   // INPOST: extraer tracking de 8 dígitos embebido en barcode largo numérico
@@ -720,13 +727,17 @@ async function getCarrierFromTracking(tracking) {
           source: 'index (INPOST extraído: ' + ipTracking + ')', elapsed
         };
       }
-      // Fallback: buscar en Odoo con el tracking extraído
-      console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
-      const ipPicking = await odooClient.findPickingByTracking(ipTracking);
-      if (ipPicking) {
-        const elapsed = Date.now() - startTime;
-        console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
-        return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+      // Solo buscar en Odoo si el tracking extraído parece genuinamente INPOST
+      // (evitar llamadas Odoo innecesarias para barcodes de otros carriers que son todo numérico)
+      // INPOST trackings conocidos: 8 dígitos empezando por 04 o 81
+      if (/^(04|81)\d{6}$/.test(ipTracking)) {
+        console.log('   🔍 Buscando INPOST en Odoo: ' + ipTracking);
+        const ipPicking = await odooClient.findPickingByTracking(ipTracking);
+        if (ipPicking) {
+          const elapsed = Date.now() - startTime;
+          console.log('   ✅ INPOST encontrado en Odoo: ' + (ipPicking.origin || 'sin pedido'));
+          return { carrier: 'INPOST', picking: ipPicking, source: 'odoo (INPOST extraído: ' + ipTracking + ')', elapsed };
+        }
       }
     }
   }

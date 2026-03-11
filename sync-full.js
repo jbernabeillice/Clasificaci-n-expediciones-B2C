@@ -93,7 +93,7 @@ class OdooClient {
     });
   }
 
-  async getRecentPickings(daysBack = 4) {
+  async getRecentPickings(daysBack = 7) {
     const dateFrom = new Date();
     dateFrom.setDate(dateFrom.getDate() - daysBack);
     const dateFilter = dateFrom.toISOString().split('T')[0];
@@ -131,7 +131,7 @@ class OdooClient {
 // ============================================
 // CLIENTE SENDCLOUD
 // ============================================
-async function fetchSendcloudParcels(daysBack = 4) {
+async function fetchSendcloudParcels(daysBack = 7) {
   const authHeader = 'Basic ' + Buffer.from(`${CONFIG.sendcloud.publicKey}:${CONFIG.sendcloud.secretKey}`).toString('base64');
   
   const dateFrom = new Date();
