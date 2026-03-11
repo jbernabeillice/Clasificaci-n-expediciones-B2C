@@ -701,6 +701,18 @@ async function getCarrierFromTracking(tracking) {
       console.log('   ✅ ASENDIA encontrado en Odoo: ' + (asPicking.origin || 'sin pedido'));
       return { carrier: 'ASENDIA', picking: asPicking, source: 'odoo (ASENDIA extraído: ' + asTracking + ')', elapsed };
     }
+    // Fallback Odoo: buscar con prefijo de 12 chars (último dígito barcode puede diferir)
+    // Ej: barcode extrae 6C20625207088 pero Odoo tiene 6C20625207080
+    if (asTracking.length >= 12) {
+      const asPrefix12 = asTracking.substring(0, 12);
+      console.log('   🔍 Buscando ASENDIA prefijo 12 en Odoo: ' + asPrefix12);
+      const asPickingPrefix = await odooClient.findPickingByTracking(asPrefix12);
+      if (asPickingPrefix) {
+        const elapsed = Date.now() - startTime;
+        console.log('   ✅ ASENDIA prefijo encontrado en Odoo: ' + (asPickingPrefix.origin || 'sin pedido'));
+        return { carrier: 'ASENDIA', picking: asPickingPrefix, source: 'odoo (ASENDIA prefijo: ' + asPrefix12 + ')', elapsed };
+      }
+    }
   }
 
   // INPOST: extraer tracking de 8 dígitos embebido en barcode largo numérico
